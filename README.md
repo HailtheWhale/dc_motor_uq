@@ -28,3 +28,16 @@ $i_a$ was the armature current. $\omega$ was the angular speed.
 The rest of the values were system parameters, with values defined in Table 1. 
 The PID controller used was a standard PID, with the error term $e(t)$ being based 
 on the difference between the desired $\omega$ and actual. 
+
+## Methods
+The simulator was implemented using Python3. Within the simulator, for each simulation step the PID controller was called to get a voltage response which was used in scipy’s solve_ivp function. The target speed for all trials was 10 rad/s, with an initial state of 0 rad/s, 0 V, and 0 A. The simulator ran for a span of 1 second each trial. The PID gains used were as follows: P = 5.0, I = 0.1, D = 1.0. Before performing the simulation, N samples were retrieved using the given methods: Standard Monte Carlo Sampling (MC), Latin Hypercube Sampling (LHS), and Importance Sampling (IS).  
+
+For this simulator, each motor parameter followed a normal distribution around a nominal value, with specifics shown in Table 1. This was applied for both the MC and LHS methods, but not for IS in which a different distribution was defined to try and improve performance. For IS, uniform samples between 3 standard deviations of the values shown in Table 1 were taken. 
+
+<p align="center">
+  <img src="Images_readme/Table 1.png" width="450">
+</p>
+
+For performance comparisons, ω vs time for the 3 implementations were plotted. Shown are the plots for 250 samples, in which the performance difference is most noticeable. Performance metrics for rise time, settling time, peak overshoot, and steady state error for the different methods at different sample sizes were represented as histograms, which for 250 samples are in the Images folder. An example of one is provided to give the general feel, but for quantitative analysis, the mean and standard deviation of each trial was tabulated. Sensitivity analysis was then performed on each parameter by zeroing the standard deviation for that parameter for a MC simulation with 100 samples.
+
+
