@@ -9,7 +9,7 @@ properly regardless of the scenario.
 This project involved the design of a PID-controlled DC motor simulator that included the effects 
 of uncertainty for a step angular speed input, ω. It explored various Monte Carlo Simulator techniques 
 including Standard Monte Carlo Sampling (MC), Latin Hypercube Sampling (LHS), and Importance Sampling (IS).  
-For performance evaluation, this report compares the $\omega$ response vs time in plots with 1000 samples. 
+For performance evaluation, this README compares the $\omega$ response vs time in plots with 1000 samples. 
 It also compares rise time, settling time, peak overshoot, and steady state error for the different methods 
 at different sample sizes represented as histograms, the majority of which are in Images folder for a sample 
 size of 250. In general, LHS responses settled fastest with the least overshoot. The performance between 
@@ -91,3 +91,4 @@ Table 4 describes the sensitivity analysis performed. For this, the MC method wa
 
 ## Conclusions
 In general, LHS outperformed the other methods in both accuracy and efficiency and converged the fastest. IS did not reduce computational cost while maintaining good accuracy, likely because the chosen distribution for the sampling was not ideal. IS had consistently worse max standard deviation than MC and LHS. Reducing the sample size seemed to reduce the standard deviation for MC and LHS, but not IS, again likely due to less-than-ideal sampling choice. This system was sensitive to changes in the $J$ parameter’s uncertainty, but not the others. This highlights the importance of checking for this and keeping the uncertainties for sensitive parameters under control to have a trustworthy system. 
+
