@@ -92,17 +92,17 @@ class MotorDC():
         params = np.zeros((n_samples, self.n_params))
     # All following normal distributions. 
         for i,val in enumerate(self.params_mean):
-            params[:,i] = np.random.normal(val, self.params_std_dev[i], n_samples).astype(np.float64)
+            params[:,i] = np.random.normal(val, self.params_std_dev[i], n_samples)
         return params
 
     def lhs_sampling(self, n_samples:int=1000):
-        self.params_mean = np.array(self.params_mean).reshape(-1,1)
-        self.params_std_dev = np.array(self.params_std_dev).reshape(-1,1)
+        means = np.array(self.params_mean)
+        std = np.array(self.params_std_dev)
 
-        sampler = qmc.LatinHypercube(d=n_samples)
-        sample = sampler.random(n=self.n_params)
-        
-        self.params = norm.ppf(sample, loc=self.params_mean, scale=self.params_std_dev).T.astype(np.float64)
+        sampler = qmc.LatinHypercube(d=self.n_params)
+        unit_samples = sampler.random(n=self.n_samples) # shape: (n_samples, n_params)
+
+        self.params = norm.ppf(unit_samples, loc=means, scale=std)
         
     def importance_sampling(self,n_samples:int=1000):
     # Make matrix to store vals. n_samples x n_params
@@ -113,7 +113,7 @@ class MotorDC():
         # from the mean, want to sample for values within that. 
             bnd_low  = val - 3*self.params_std_dev[i]
             bnd_high = val + 3*self.params_std_dev[i]
-            self.params[:,i] = np.random.uniform(low=bnd_low, high=bnd_high, size=n_samples).astype(np.float64)
+            self.params[:,i] = np.random.uniform(low=bnd_low, high=bnd_high, size=n_samples)
 
 
     def solver(self, 
@@ -215,10 +215,10 @@ class MotorDC():
                 except:
                     print("Signal did not settle.")
         # Convert to np arrays 
-            self.times_rise         = np.array(self.times_rise).astype(np.float64)
-            self.times_settle       = np.array(self.times_settle).astype(np.float64)
-            self.percent_overshoots = np.array(self.percent_overshoots).astype(np.float64)
-            self.ss_errs            = np.array(self.ss_errs).astype(np.float64)
+            self.times_rise         = np.array(self.times_rise)
+            self.times_settle       = np.array(self.times_settle)
+            self.percent_overshoots = np.array(self.percent_overshoots)
+            self.ss_errs            = np.array(self.ss_errs)
 
 
             return self.times_rise,self.times_settle,self.percent_overshoots,self.ss_errs
