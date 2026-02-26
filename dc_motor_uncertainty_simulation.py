@@ -13,101 +13,96 @@ from pathlib import Path
 
 class CtrlPID:
     def __init__(self, target:float, 
-                 gains:list[float,float,float]=[0.5,0.001,0.1]):
+                 gains:list=[0.5,0.001,0.1]):
    
         self.target_w = target
         self.Kp, self.Ki, self.Kd = gains
-        # Accumulation terms for I and D terms 
         self.integral = 0.0
         self.err_prev = 0.0
 
 # PID controller. In this case for w. 
     def sim_step(self, actual:float, dt:float):
-    # Err is the target speed - actual
         err = self.target_w-actual
         err_dot = (err-self.err_prev)/ dt
-    # P,I,D
-        P_out = self.Kp*err
-        I_out = self.Ki*self.integral
-        D_out = self.Kd*err_dot
-    # return value.
-        value = P_out+I_out+D_out  # PID application
-    # Update values
-        self.err_prev = err
+        P = self.Kp*err
+        I = self.Ki*self.integral
+        D = self.Kd*err_dot
         self.integral += err*dt
-
-        return value
+        self.err_prev = err
+        return P + I + D
         
-class MotorDC(CtrlPID):
+class MotorDC():
     def __init__(self, 
-                 target_w:float                                           = 10,
-                 PID_gains:list[float,float,float]                        = [0.5,0.001,0.1],
-                 params_mean:list[float,float,float,float,float,float]    = [1.0, 0.01, 0.05, 0.05, 0.01, 0.001],
-                 params_std_dev:list[float,float,float,float,float,float] = [0.1, 0.002,0.005,0.005,0.002,0.0002]):
+                 target_w:float      = 10,
+                 PID_gains:list      = [0.5,0.001,0.1],
+                 params_mean:list    = [1.0, 0.01, 0.05, 0.05, 0.01, 0.001],
+                 params_std_dev:list = [0.1, 0.002,0.005,0.005,0.002,0.0002]):
 
-        super().__init__(target = target_w, gains=PID_gains)
+    # PID Controller instance params
+        self.target_w = target_w
+        self.Kp, self.Ki, self.Kd = PID_gains
+
     # Motor params: [R, L, Kb, Kt, J, B]
         self.params_mean = params_mean
         self.params_std_dev = params_std_dev
         self.n_params = len(self.params_mean)
 
-#####################
-# Motor Model and Solving Method
-#####################
-# The DC Motor Model for solve_ivp
-    def motor_model(self, t:float, y:np.ndarray, params:np.ndarray):
-    # y is [current,w]. Returns this when solved. 
-    # Incorporate the PID to the solver fun. 
-        Vt = self.sim_step(actual=y[1], dt=self.dt)
-    # Motor params: [R, L, Kb, Kt, J, B]
-    # Need to be fed here separate because will change depending on distribution
+    # Treat V as const. input for each integration window.
+    def motor_model(self, t:float, y:np.ndarray, params:np.ndarray, Vt):
         R, L, Kb, Kt, J, B = params
+        i, w = y
 
-        didt = (Vt - Kb*y[1] - R*y[0])/L
-        dwdt = (Kt*y[0] - B*y[1])/J
-        return np.array([didt,dwdt])
+        # Physical Equations
+        didt = (Vt - Kb*w - R*i)/L
+        dwdt = (Kt*i - B*w)/J
 
-# Solving the motor model. 
-    def motor_model_solve(self, params_i:np.ndarray, y0:list[float,float], 
-                          t_span:tuple[float,float], t_eval:np.ndarray):
-    # args is for additional arguments that are NOT y,t. 
-    # Order of sols is defined in motor_model. 
-    # Each returned val is a vector. 
-        current_now, w_now = solve_ivp(fun = self.motor_model, t_span=t_span, y0=y0, args=(params_i,), t_eval=t_eval).y
-        return current_now, w_now
+        return [didt,dwdt]
 
-#####################
-## Sampling Methods 
-#####################
+    def motor_model_solve(self, params_i:np.ndarray, y0:list, 
+                          t_span:tuple, t_eval:np.ndarray):
+        # fresh PID per sample solved.
+        pid = CtrlPID(target=self.target_w, gains=[self.Kp, self.Ki, self.Kd])
+
+        i_now = np.zeros_like(t_eval)
+        w_now = np.zeros_like(t_eval)
+
+        # Set IC
+        i_now[0], w_now[0] = y0
+        y = np.array(y0)
+
+        for k in range(len(t_eval)-1):
+            dt = t_eval[k+1] - t_eval[k]
+
+            # Update PID voltage  once per timestep
+            Vt = pid.sim_step(actual=w_now[k], dt=dt)
+
+            # Inegrate physics with constant Vt
+            sol = solve_ivp(fun = lambda t,y: self.motor_model(t, y, params_i, Vt), 
+                            t_span = (t_eval[k], t_eval[k+1]), 
+                            y0= y, 
+                            t_eval=[t_eval[k+1]]
+                            )
+            
+            y = sol.y[:, -1]
+            i_now[k+1], w_now[k+1] = y
+
+
     def monte_carlo_sampling(self, n_samples:int=1000):
     # Make matrix to store vals. n_samples x n_params
-        self.params = np.zeros((n_samples, self.n_params))
-    # Perform sampling for all parameters. 
-    # They all follow normal distributions. 
+        params = np.zeros((n_samples, self.n_params))
+    # All following normal distributions. 
         for i,val in enumerate(self.params_mean):
-            self.params[:,i] = np.random.normal(val, self.params_std_dev[i], n_samples).astype(np.float16)
+            params[:,i] = np.random.normal(val, self.params_std_dev[i], n_samples).astype(np.float64)
+        return params
 
     def lhs_sampling(self, n_samples:int=1000):
-    # First, pull in params and organize. Need cols for multiplication.
         self.params_mean = np.array(self.params_mean).reshape(-1,1)
         self.params_std_dev = np.array(self.params_std_dev).reshape(-1,1)
 
-    # Refer: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.qmc.LatinHypercube.html
-    # Makes n points in [0,1]^d. Each value is stratified. 
-    # Make hypercubes based on however many samples working, d. 
         sampler = qmc.LatinHypercube(d=n_samples)
-    # In each of these, sample for each parameter. 
-    # This will give a n x d matrix back. 
         sample = sampler.random(n=self.n_params)
-
-    # Refer: https://stackoverflow.com/questions/20626994/how-to-calculate-the-inverse-of-the-normal-cumulative-distribution-function-in-p
-    # norm.ppf finds the inverse of the cumulative distribution function for a normal distribution ("norm").
-    # ppf for "percent point function" or "quantile function".
-    # By default, uses mean = 0 and stddev = 1. loc and scale change this. 
-
-    # Sample is the quantile. So the n_params x n_samples matrix is finding the quantiles for each sample and param. 
-    # Need to transpose it to convert it back to n_samples x n_params format. 
-        self.params = norm.ppf(sample, loc=self.params_mean, scale=self.params_std_dev).T.astype(np.float16)
+        
+        self.params = norm.ppf(sample, loc=self.params_mean, scale=self.params_std_dev).T.astype(np.float64)
         
     def importance_sampling(self,n_samples:int=1000):
     # Make matrix to store vals. n_samples x n_params
@@ -118,16 +113,13 @@ class MotorDC(CtrlPID):
         # from the mean, want to sample for values within that. 
             bnd_low  = val - 3*self.params_std_dev[i]
             bnd_high = val + 3*self.params_std_dev[i]
-            self.params[:,i] = np.random.uniform(low=bnd_low, high=bnd_high, size=n_samples).astype(np.float16)
+            self.params[:,i] = np.random.uniform(low=bnd_low, high=bnd_high, size=n_samples).astype(np.float64)
 
 
-#####################
-## Solving
-#####################
     def solver(self, 
-                dt:float=0.001, t_span:tuple[float,float]=(0.0,1.0), 
+                dt:float=0.001, t_span:tuple=(0.0,1.0), 
                 n_samples:int=1000, sampler:str="MC",
-                y0:list[float,float]=[0.0,0.0]):
+                y0:list=[0.0,0.0]):
         self.n_samples = n_samples # for visuals access
         self.dt = dt
         self.t_eval  = np.arange(*t_span, self.dt)
@@ -137,7 +129,7 @@ class MotorDC(CtrlPID):
 
     # Monte Carlo Sampling
         if sampler == "MC":
-            self.monte_carlo_sampling(n_samples=self.n_samples)
+            params = self.monte_carlo_sampling(n_samples=self.n_samples)
     # Latin Hypercube Sampling
         elif sampler == "LHS":
             self.lhs_sampling(n_samples=self.n_samples)
@@ -151,7 +143,9 @@ class MotorDC(CtrlPID):
         # Open up multi-threading until complete entire dataset. 
             with concurrent.futures.ProcessPoolExecutor(max_workers=40) as exec:
             # Submit a bunch of different samples in a for loop to different processors for faster handling. 
-                futures = {exec.submit(self.motor_model_solve, params_i, y0, t_span, self.t_eval) for params_i in self.params}
+
+
+                futures = {exec.submit(self.motor_model_solve, params_i, y0, t_span, self.t_eval) for params_i in params}
                 # As these portions are finished, they will be flagged. Update the progress bar when this happens. 
                 for future in concurrent.futures.as_completed(futures):
                     progress.update(1)
@@ -163,10 +157,6 @@ class MotorDC(CtrlPID):
     # These are 2D matrices, with x being the sample number. 
         self.current = np.array(self.current)
         self.w       = np.array(self.w)
-
-#####################
-## Plotting and Analyzing
-#####################
 
 # Mean and uncertainty plotting. 
     def solver_w_plot(self, title:str=None, save_dir:str="Images"):
@@ -225,10 +215,10 @@ class MotorDC(CtrlPID):
                 except:
                     print("Signal did not settle.")
         # Convert to np arrays 
-            self.times_rise         = np.array(self.times_rise).astype(np.float16)
-            self.times_settle       = np.array(self.times_settle).astype(np.float16)
-            self.percent_overshoots = np.array(self.percent_overshoots).astype(np.float16)
-            self.ss_errs            = np.array(self.ss_errs).astype(np.float16)
+            self.times_rise         = np.array(self.times_rise).astype(np.float64)
+            self.times_settle       = np.array(self.times_settle).astype(np.float64)
+            self.percent_overshoots = np.array(self.percent_overshoots).astype(np.float64)
+            self.ss_errs            = np.array(self.ss_errs).astype(np.float64)
 
 
             return self.times_rise,self.times_settle,self.percent_overshoots,self.ss_errs
@@ -272,9 +262,7 @@ class MotorDC(CtrlPID):
                              "std_rise_time":self.times_rise.std()}
         print(std_ctrl_metrics)
 
-#####################
-## Full Pipeline
-#####################
+
 def main():
 # Load in the motor parameters
 # Params: [R, L, Kb, Kt, J, B]
@@ -286,49 +274,52 @@ def main():
 # How many samples should use for each method. The more samples used the longer
 # it will take to run and the more memory. Can expand to multiple runs if wanted, 
 # but will make even more figs. 
-    for i in [250,500, 1000]:
+    i = 250
+    j = "MC"
+    # for i in [250,500, 1000]:
     # Loop over all the different methods.
-        for j in methods:
-            dc_motor = MotorDC(target_w=10.0,PID_gains=pid_gains,
-                            params_mean=params_mean,params_std_dev=params_std_dev)
-            print(f"Solving for {j}. {i} Samples being used.")
-        # Solves for w and current
-            dc_motor.solver(dt=0.0001,t_span=(0.0,1.0),n_samples=i,sampler=j,y0=[0.0,0.0])
-        # Plots w response. 
-            dc_motor.solver_w_plot(title=f"{j} \u03C9 vs Time for {i} Samples")
-        # Gets the performance metricss and makes a histogram out of it. 
-            dc_motor.solver_histo_plot(title=f"{j} metric for {i} Samples")
-        # Display them for sanity checks
-            dc_motor.metric_printer()
-            print("\n")
-        # Cleanup to prevent memory leaks
-            del dc_motor
+        # for j in methods:
+    dc_motor = MotorDC(target_w=10.0,PID_gains=pid_gains,
+                    params_mean=params_mean,params_std_dev=params_std_dev)
+    print(f"Solving for {j}. {i} Samples being used.")
+# Solves for w and current
+    dc_motor.solver(dt=0.0001, t_span=(0.0,1.0), n_samples=i, 
+                    sampler=j, y0=[0.0,0.0])
+# Plots w response. 
+    dc_motor.solver_w_plot(title=f"{j} \u03C9 vs Time for {i} Samples")
+# Gets the performance metricss and makes a histogram out of it. 
+    dc_motor.solver_histo_plot(title=f"{j} metric for {i} Samples")
+# Display them for sanity checks
+    dc_motor.metric_printer()
+    print("\n")
+# Cleanup to prevent memory leaks
+    del dc_motor
 
 # Sensitivity analysis. Will changing the std deviations change anything?
-    types = ["normal","R", "L", "Kb", "Kt","J","B"]
-    for i,type in enumerate(types):
-        print(f"Solving for sensitivity with {type}. 100 Samples being used.")
-    # For the given type, make uncertainty 0. Look at performance results. 
-        if type != "normal":
-        # Params: [R, L, Kb, Kt, J, B]
-            params_std_dev[i-1] = 0.0
-        dc_motor = MotorDC(target_w=10.0,PID_gains=pid_gains,
-                        params_mean=params_mean,params_std_dev=params_std_dev)
-    # Solves for w and current
-        dc_motor.solver(dt=0.0001,t_span=(0.0,1.0),n_samples=100,sampler="MC",y0=[0.0,0.0])
-    # Plots w response. 
-        dc_motor.solver_w_plot(title=f"Uncertainty {type} MC \u03C9 vs Time for 100 Samples")
-    # Check the data. 
-        dc_motor.get_performance_metrics()
-        dc_motor.metric_printer()
-        print("\n")
+    # types = ["normal","R", "L", "Kb", "Kt","J","B"]
+    # for i,type in enumerate(types):
+    #     print(f"Solving for sensitivity with {type}. 100 Samples being used.")
+    # # For the given type, make uncertainty 0. Look at performance results. 
+    #     if type != "normal":
+    #     # Params: [R, L, Kb, Kt, J, B]
+    #         params_std_dev[i-1] = 0.0
+    #     dc_motor = MotorDC(target_w=10.0,PID_gains=pid_gains,
+    #                     params_mean=params_mean,params_std_dev=params_std_dev)
+    # # Solves for w and current
+    #     dc_motor.solver(dt=0.0001,t_span=(0.0,1.0),n_samples=100,sampler="MC",y0=[0.0,0.0])
+    # # Plots w response. 
+    #     dc_motor.solver_w_plot(title=f"Uncertainty {type} MC \u03C9 vs Time for 100 Samples")
+    # # Check the data. 
+    #     dc_motor.get_performance_metrics()
+    #     dc_motor.metric_printer()
+    #     print("\n")
     
-    # Need to reset each time. 
-        if type != "normal":
-            params_std_dev = [0.1, 0.002,0.005,0.005,0.002,0.0002]
+    # # Need to reset each time. 
+    #     if type != "normal":
+    #         params_std_dev = [0.1, 0.002,0.005,0.005,0.002,0.0002]
 
-    # Cleanup to prevent memory leaks
-        del dc_motor
+    # # Cleanup to prevent memory leaks
+    #     del dc_motor
         
 if __name__ == '__main__':
     main()
