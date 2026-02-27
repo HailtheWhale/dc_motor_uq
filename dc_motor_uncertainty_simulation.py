@@ -1,14 +1,15 @@
 import numpy as np
 import matplotlib.pyplot as plt
-# Solving IVP
 from scipy.integrate import solve_ivp
 # For Latin hypercube sampling
 from scipy.stats import qmc, norm
 # Progress bars and speeding up processes. 
 from concurrent.futures import ProcessPoolExecutor
 from tqdm import tqdm
-# Visualization Saving
+
+# Pathing
 from pathlib import Path
+BASE_DIR = Path(__file__).resolve().parent
 
 class CtrlPID:
     def __init__(self, target:float, 
@@ -126,6 +127,8 @@ class MotorDC():
             y = sol.y[:, -1]
             i_now[k+1], w_now[k+1] = y
 
+        return i_now, w_now
+
 # Sampling Methods
     def monte_carlo_sampling(self, n_samples:int=1000):
     # Make matrix to store vals. n_samples x n_params
@@ -196,33 +199,35 @@ class MotorDC():
         self.current = np.array(current)
         self.w = np.array(w)
 
-
 # Mean and uncertainty plotting. 
     def solver_w_plot(self, title:str=None, save_dir:str="Images"):
-    # Save the figures. There's a lotta them. 
-        save_dir = Path(save_dir)
-    # Make sure it exists.
-        if not save_dir.exists():
-            save_dir.mkdir()
+        save_dir = BASE_DIR / save_dir
+        save_dir.mkdir(exist_ok=True)
 
     # Getting the plots for the motor speed, bc PID ctrls this. 
-        w_mean     = self.w.mean(0)
-        w_std      = self.w.std(0)
-    # Envelope of uncertainty.
-        w_bnd_low  = w_mean - w_std
-        w_bnd_high = w_mean + w_std
+    # Ensures NaNs do not break plots. 
+        w_mean     = np.nanmean(self.w, axis=0)
+        w_std      = np.nanmean(self.w, axis=0)
+    # Envelope of uncertainty, 90% credible band.
+        w_bnd_low  = np.percentile(self.w, 5, axis=0)
+        w_bnd_high = np.percentile(self.w, 95, axis=0)
 
-    # Plotting the results 
+    # Plotting
         fig, ax = plt.subplots()
-        ax.plot(self.t_eval, w_mean)
-    # Probability Envelope. 
-        ax.fill_between(self.t_eval, w_bnd_low, w_bnd_high, alpha=0.3)
+        # Probability Envelope. 
+        ax.plot(self.t_eval, w_mean, label="Mean Response", color="blue")
+        ax.fill_between(self.t_eval, w_bnd_low, w_bnd_high, color="orange", alpha=0.3, label="Uncertainty Band")
+        # Deterministic Trajectory
+        det_params = np.array(self.params_mean)
+        det_i, det_w = self.motor_model_solve(det_params, [0,0], (0, self.t_eval[-1]), self.t_eval)
+        ax.plot(self.t_eval, det_w, label="Nominal", color="black", linestyle="--")
+        ax.legend()
         ax.set_xlabel("Time (s)")
         ax.set_ylabel("\u03C9 (rad/s)")
         ax.grid()
-        ax.set_title(title)
-        fig.savefig(save_dir/ f"{title}.png")
-        plt.close()
+        ax.set_title(f"{title}\n90% Uncertainty Envelope")
+        fig.savefig(save_dir/ f"{title}.png", dpi=300,bbox_inches="tight")
+        plt.close(fig)
 
 # What the histogram visuals use. 
     def get_performance_metrics(self):
@@ -264,10 +269,8 @@ class MotorDC():
             return self.times_rise,self.times_settle,self.percent_overshoots,self.ss_errs
     
     def solver_histo_plot(self, save_dir:str="Images", title:str=None):
-    # Save the figures. There's a lotta them. 
-        histograms_dir = Path(save_dir) / "Histograms"
-        if not histograms_dir.exists():
-            histograms_dir.mkdir()
+        save_dir = BASE_DIR / save_dir
+        save_dir.mkdir(exist_ok=True)
 
     # Retrieve the performance metrics analyzing
         # times_rise,times_settle,percent_overshoots,ss_errs 
@@ -326,7 +329,7 @@ def main():
     dc_motor.solver(dt=0.0001, t_span=(0.0,1.0), n_samples=i, 
                     sampler=j, y0=[0.0,0.0])
 # Plots w response. 
-    # dc_motor.solver_w_plot(title=f"{j} \u03C9 vs Time for {i} Samples")
+    dc_motor.solver_w_plot(title=f"{j} \u03C9 vs Time for {i} Samples")
 # Gets the performance metricss and makes a histogram out of it. 
     # dc_motor.solver_histo_plot(title=f"{j} metric for {i} Samples")
 # Display them for sanity checks
