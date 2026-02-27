@@ -207,7 +207,7 @@ class MotorDC():
     # Getting the plots for the motor speed, bc PID ctrls this. 
     # Ensures NaNs do not break plots. 
         w_mean     = np.nanmean(self.w, axis=0)
-        w_std      = np.nanmean(self.w, axis=0)
+        w_std      = np.nanstd(self.w, axis=0)
     # Envelope of uncertainty, 90% credible band.
         w_bnd_low  = np.percentile(self.w, 5, axis=0)
         w_bnd_high = np.percentile(self.w, 95, axis=0)
@@ -216,16 +216,16 @@ class MotorDC():
         fig, ax = plt.subplots()
         # Probability Envelope. 
         ax.plot(self.t_eval, w_mean, label="Mean Response", color="blue")
-        ax.fill_between(self.t_eval, w_bnd_low, w_bnd_high, color="orange", alpha=0.3, label="Uncertainty Band")
+        ax.fill_between(self.t_eval, w_bnd_low, w_bnd_high, color="orange", alpha=0.3, label="90% Envelope")
         # Deterministic Trajectory
-        det_params = np.array(self.params_mean)
+        det_params = np.median(self.params_mean, axis=0)
         det_i, det_w = self.motor_model_solve(det_params, [0,0], (0, self.t_eval[-1]), self.t_eval)
         ax.plot(self.t_eval, det_w, label="Nominal", color="black", linestyle="--")
         ax.legend()
         ax.set_xlabel("Time (s)")
         ax.set_ylabel("\u03C9 (rad/s)")
         ax.grid()
-        ax.set_title(f"{title}\n90% Uncertainty Envelope")
+        ax.set_title(f"{title}\nMean Response with 90% Uncertainty Envelope")
         fig.savefig(save_dir/ f"{title}.png", dpi=300,bbox_inches="tight")
         plt.close(fig)
 
