@@ -35,3 +35,10 @@ git clone https://github.com/HailtheWhale/dc_motor_uq.git
 cd dc_motor_uq
 pip install -r requirements.txt
 ```
+
+## How to Run
+Execute the example workflow:
+
+```
+python -m scripts.run_simulation
+```
