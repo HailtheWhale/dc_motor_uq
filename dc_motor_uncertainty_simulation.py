@@ -171,57 +171,57 @@ class MotorDC():
 
 # What the histogram visuals use. 
     def get_performance_metrics(self):
-            t = self.t_eval
-            target_w = self.target_w
+        t = self.t_eval
+        target_w = self.target_w
 
-        # Getting Performance Metrics. Each sample taken will have these associated 
-        # With them. 
-            times_rise         = []
-            times_settle       = []
-            percent_overshoots = []
-            ss_errs            = []
+    # Getting Performance Metrics. Each sample taken will have these associated 
+    # With them. 
+        times_rise         = []
+        times_settle       = []
+        percent_overshoots = []
+        ss_errs            = []
 
-            # How many times signal did not settle
-            n_not_settled = 0
+        # How many times signal did not settle
+        n_not_settled = 0
 
-            for i in range(self.n_samples):
-                w_i   = self.w[i,:] # Pull the RPMs for a given sample
-                w_max = np.max(w_i)    # Find the max value
-            # If the max val is more than the target, we have overshoot. 
-                if (w_max > target_w):
-                    percent_overshoot = (w_max - target_w) / target_w * 100
-                else:
-                    percent_overshoot = 0.0
-                percent_overshoots.append(percent_overshoot)
+        for i in range(self.n_samples):
+            w_i   = self.w[i,:] # Pull the RPMs for a given sample
+            w_max = np.max(w_i)    # Find the max value
+        # If the max val is more than the target, we have overshoot. 
+            if (w_max > target_w):
+                percent_overshoot = (w_max - target_w) / target_w * 100
+            else:
+                percent_overshoot = 0.0
+            percent_overshoots.append(percent_overshoot)
 
-            # SS error is based on final value. 
-                ss_errs.append(w_i[-1] - target_w)
+        # SS error is based on final value. 
+            ss_errs.append(w_i[-1] - target_w)
 
-            # Rise time: first time to reach 90% target. 
-                idx_rise = np.where(w_i >= 0.9* target_w)[0]
-                if len(idx_rise) == 0:
-                    times_rise.append(np.nan)
-                else:
-                    times_rise.append(t[idx_rise[0]])
+        # Rise time: first time to reach 90% target. 
+            idx_rise = np.where(w_i >= 0.9* target_w)[0]
+            if len(idx_rise) == 0:
+                times_rise.append(np.nan)
+            else:
+                times_rise.append(t[idx_rise[0]])
 
-            # Settling time: time when the value is within 2% the target speed. 
-                idx_settle = np.where(np.abs(w_i - target_w) <= 0.02 * target_w)[0]
-                if len(idx_settle) == 0:
-                    times_settle.append(np.nan)
-                    n_not_settled += 1
-                else:
-                    times_settle.append(t[idx_settle[-1]])
-                    
-            if n_not_settled:
-                print(f"Signal did not settle {n_not_settled} times.")
+        # Settling time: time when the value is within 2% the target speed. 
+            idx_settle = np.where(np.abs(w_i - target_w) <= 0.02 * target_w)[0]
+            if len(idx_settle) == 0:
+                times_settle.append(np.nan)
+                n_not_settled += 1
+            else:
+                times_settle.append(t[idx_settle[-1]])
+                
+        if n_not_settled:
+            print(f"Signal did not settle {n_not_settled} times.")
 
-        # Convert to np arrays 
-            times_rise         = np.array(times_rise)
-            times_settle       = np.array(times_settle)
-            percent_overshoots = np.array(percent_overshoots)
-            ss_errs            = np.array(ss_errs)
+    # Convert to np arrays 
+        self.times_rise         = np.array(times_rise)
+        self.times_settle       = np.array(times_settle)
+        self.percent_overshoots = np.array(percent_overshoots)
+        self.ss_errs            = np.array(ss_errs)
 
-            return [times_rise, times_settle, percent_overshoots, ss_errs]
+        return [self.times_rise, self.times_settle, self.percent_overshoots, self.ss_errs]
 
 # Mean and uncertainty plotting. 
     def solver_w_plot(self, title:str=None, save_dir:str="Images"):
@@ -258,7 +258,7 @@ class MotorDC():
 
     def solver_histo_plot(self, save_dir:str="Images", title:str=None):
     # Directory Setup 
-        save_dir = BASE_DIR / save_dir
+        save_dir = BASE_DIR / save_dir / "Histograms"
         save_dir.mkdir(exist_ok=True)
 
     # Retrieve the performance metrics analyzing
@@ -287,23 +287,29 @@ class MotorDC():
 
             # Clean the filename
             safe_label = label.replace("/","_").replace("(","").replace(")","").replace(" ","_")
-            fig.savefig(save_dir / "Histograms" / f"{safe_label}_{title}.png", dpi=300, bbox_inches="tight")
+            fig.savefig(save_dir / f"{safe_label}_{title}.png", dpi=300, bbox_inches="tight")
             plt.close(fig)
 
     def metric_printer(self):
-        print(f"Max motor speed DEVIATION (RPM): {max(self.w.std(0))}")
+        # Ensure metrics exist.
+        if not hasattr(self,"percent_overshoots"):
+            self.get_performance_metrics()
 
-        mean_ctrl_metrics = {"mean_percent_overshoot":self.percent_overshoots.mean(),
-                             "mean_steady_state_error":self.ss_errs.mean(),
-                             "mean_settling_time":self.times_settle.mean(),
-                             "mean_rise_time":self.times_rise.mean()}
+        print(f"Max motor speed DEVIATION (rad/s): {np.max(self.w.std(axis=0))}")
+
+        mean_ctrl_metrics = {
+                            "mean_percent_overshoot":np.nanmean(self.percent_overshoots),
+                             "mean_steady_state_error":np.nanmean(self.ss_errs),
+                             "mean_settling_time":np.nanmean(self.times_settle),
+                             "mean_rise_time":np.nanmean(self.times_rise)
+        }
         print(mean_ctrl_metrics)
-        print("\n")
-
-        std_ctrl_metrics = {"std_percent_overshoot":self.percent_overshoots.std(),
-                             "std_steady_state_error":self.ss_errs.std(),
-                             "std_settling_time":self.times_settle.std(),
-                             "std_rise_time":self.times_rise.std()}
+        std_ctrl_metrics = {
+                            "std_percent_overshoot":np.nanstd(self.percent_overshoots),
+                             "std_steady_state_error":np.nanstd(self.ss_errs),
+                             "std_settling_time":np.nanstd(self.times_settle),
+                             "std_rise_time":np.nanstd(self.times_rise)
+                             }
         print(std_ctrl_metrics)
 
 
@@ -334,8 +340,8 @@ def main():
 # Gets the performance metrics and makes a histogram out of it. 
     dc_motor.solver_histo_plot(title=f"{j} metric for {i} Samples")
 # Display them for sanity checks
-    # dc_motor.metric_printer()
-    # print("\n")
+    dc_motor.metric_printer()
+    print("\n")
 # Cleanup to prevent memory leaks
     del dc_motor
 
