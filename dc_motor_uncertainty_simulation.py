@@ -31,7 +31,7 @@ class CtrlPID:
         self.err_prev = err
         return P + I + D
 
-# Parallelism
+# Parallelism. Belongs in the MotorDC.
 def run_single_sample(args):
     params_i, y0, t_eval, target_w, pid_gains = args
 
@@ -99,36 +99,6 @@ class MotorDC():
         dwdt = (Kt*i - B*w)/J
         return [didt,dwdt]
 
-    def motor_model_solve(self, params_i:np.ndarray, y0:list, 
-                          t_span:tuple, t_eval:np.ndarray):
-        # fresh PID per sample solved.
-        pid = CtrlPID(target=self.target_w, gains=[self.Kp, self.Ki, self.Kd])
-
-        i_now = np.zeros_like(t_eval)
-        w_now = np.zeros_like(t_eval)
-
-        # Set IC
-        i_now[0], w_now[0] = y0
-        y = np.array(y0)
-
-        for k in range(len(t_eval)-1):
-            dt = t_eval[k+1] - t_eval[k]
-
-            # Update PID voltage  once per timestep
-            Vt = pid.sim_step(actual=w_now[k], dt=dt)
-
-            # Inegrate physics with constant Vt
-            sol = solve_ivp(fun = lambda t,y: self.motor_model(t, y, params_i, Vt), 
-                            t_span = (t_eval[k], t_eval[k+1]), 
-                            y0= y, 
-                            t_eval=[t_eval[k+1]]
-                            )
-            
-            y = sol.y[:, -1]
-            i_now[k+1], w_now[k+1] = y
-
-        return i_now, w_now
-
 # Sampling Methods
     def monte_carlo_sampling(self, n_samples:int=1000):
     # Make matrix to store vals. n_samples x n_params
@@ -179,11 +149,11 @@ class MotorDC():
         else:
             raise ValueError("Only: 'MC', 'LHS', and 'IS' sampling allowed.")
 
-    # Loop through all the samples in tqdm. Will take a while. 
         args_list = [
             (params[i], y0, self.t_eval, self.target_w, [self.Kp, self.Ki, self.Kd])
             for i in range(n_samples)
         ]
+        self.params = params
     
     # Convert lists to np arrays for faster handling
     # These are 2D matrices, with x being the sample number. 
@@ -198,6 +168,49 @@ class MotorDC():
 
         self.current = np.array(current)
         self.w = np.array(w)
+
+# What the histogram visuals use. 
+    def get_performance_metrics(self):
+            target_w = self.target_w
+
+        # Getting Performance Metrics. Each sample taken will have these associated 
+        # With them. 
+            times_rise         = []
+            times_settle       = []
+            percent_overshoots = []
+            ss_errs            = []
+
+            # How many times signal did not settle
+            i_ns = 0
+            for i in range(self.n_samples):
+                w_i   = self.w[i,:] # Pull the RPMs for a given sample
+                w_max = max(w_i)    # Find the max value
+            # If the max val is more than the target, we have overshoot. 
+                if (w_max > target_w):
+                    percent_overshoot = (w_max - target_w)/target_w*100
+                else:
+                    percent_overshoot = 0.0
+                percent_overshoots.append(percent_overshoot)
+            # SS error is based on final value. 
+                ss_errs.append(w_i[-1]-target_w)
+            # Rise time is the first time to reach 90% the target speed. 
+                times_rise.append(self.t_eval[w_i > target_w*0.9][0])
+            # Settling time is the time when the value is within 2% the target speed. 
+                try:
+                    time_settle = self.t_eval[np.where(abs(w_i - target_w) <= 0.02*target_w)[-1][0]]
+                    times_settle.append(time_settle)
+                except:
+                    i_ns += 1
+            if i_ns:
+                print(f"Signal did not settle {i_ns} times.")
+
+        # Convert to np arrays 
+            times_rise         = np.array(times_rise)
+            times_settle       = np.array(times_settle)
+            percent_overshoots = np.array(percent_overshoots)
+            ss_errs            = np.array(ss_errs)
+
+            return [times_rise, times_settle, percent_overshoots, ss_errs]
 
 # Mean and uncertainty plotting. 
     def solver_w_plot(self, title:str=None, save_dir:str="Images"):
@@ -218,8 +231,11 @@ class MotorDC():
         ax.plot(self.t_eval, w_mean, label="Mean Response", color="blue")
         ax.fill_between(self.t_eval, w_bnd_low, w_bnd_high, color="orange", alpha=0.3, label="90% Envelope")
         # Deterministic Trajectory
-        det_params = np.median(self.params_mean, axis=0)
-        det_i, det_w = self.motor_model_solve(det_params, [0,0], (0, self.t_eval[-1]), self.t_eval)
+        det_params = np.median(self.params, axis=0)
+        det_i, det_w = run_single_sample(
+            (det_params, [0,0], self.t_eval, self.target_w, [self.Kp, self.Ki, self.Kd])
+            )
+
         ax.plot(self.t_eval, det_w, label="Nominal", color="black", linestyle="--")
         ax.legend()
         ax.set_xlabel("Time (s)")
@@ -229,65 +245,40 @@ class MotorDC():
         fig.savefig(save_dir/ f"{title}.png", dpi=300,bbox_inches="tight")
         plt.close(fig)
 
-# What the histogram visuals use. 
-    def get_performance_metrics(self):
-            target_w = self.target_w
-
-        # Getting Performance Metrics. Each sample taken will have these associated 
-        # With them. 
-            self.times_rise         = []
-            self.times_settle       = []
-            self.percent_overshoots = []
-            self.ss_errs            = []
-
-            for i in range(self.n_samples):
-                w_i   = self.w[i,:] # Pull the RPMs for a given sample
-                w_max = max(w_i)    # Find the max value
-            # If the max val is more than the target, we have overshoot. 
-                if (w_max > target_w):
-                    percent_overshoot = (w_max - target_w)/target_w*100
-                else:
-                    percent_overshoot = 0.0
-                self.percent_overshoots.append(percent_overshoot)
-            # SS error is based on final value. 
-                self.ss_errs.append(w_i[-1]-target_w)
-            # Rise time is the first time to reach 90% the target speed. 
-                self.times_rise.append(self.t_eval[w_i > target_w*0.9][0])
-            # Settling time is the time when the value is within 2% the target speed. 
-                try:
-                    time_settle = self.t_eval[np.where(abs(w_i - target_w) <= 0.02*target_w)[-1][0]]
-                    self.times_settle.append(time_settle)
-                except:
-                    print("Signal did not settle.")
-        # Convert to np arrays 
-            self.times_rise         = np.array(self.times_rise)
-            self.times_settle       = np.array(self.times_settle)
-            self.percent_overshoots = np.array(self.percent_overshoots)
-            self.ss_errs            = np.array(self.ss_errs)
-
-
-            return self.times_rise,self.times_settle,self.percent_overshoots,self.ss_errs
-    
     def solver_histo_plot(self, save_dir:str="Images", title:str=None):
+    # Directory Setup 
         save_dir = BASE_DIR / save_dir
         save_dir.mkdir(exist_ok=True)
 
     # Retrieve the performance metrics analyzing
-        # times_rise,times_settle,percent_overshoots,ss_errs 
         metrics = self.get_performance_metrics()
-        x_labels = ["Rise Time (s)","Settling Time (s)",
-                    "Percent Overshoot (s)","Steady State Error (rps)"]
-        ylabel = "Appearances"
+        print(metrics[2])
+        labels = ["Rise Time (s)",
+                "Settling Time (s)",
+                "Percent Overshoot (%)",
+                "Steady-State Error (rad/s)"]
+        
+        # drop NaNs during plotting.
+        cleaned_metrics = [m[~np.isnan(m)] for m in metrics]
 
-    # Lots of plotting 
-        for i,label in enumerate(x_labels):
+        # Report number of NaNs occurred for debug.
+        for label, m in zip(labels, metrics):
+            n_nan = np.isnan(m).sum()
+            if n_nan > 0:
+                print(f"{label}: {n_nan} samples produced NaN values. Excluded these from histogram.")
+
+        for data,label in zip(cleaned_metrics, labels):
             fig, ax = plt.subplots()
-            ax.hist(metrics[i])
+
+            ax.hist(data, bins=30, color="blue", edgecolor="black")
             ax.set_xlabel(label)
-            ax.set_ylabel(ylabel=ylabel)
+            ax.set_ylabel("Count")
             ax.set_title(title)
-            fig.savefig(histograms_dir / f"{label} {title}.png")
-            plt.close()
+
+            # Clean the filename
+            safe_label = label.replace("/","_").replace("(","").replace(")","").replace(" ","_")
+            fig.savefig(save_dir / f"{safe_label}_{title}.png", dpi=300, bbox_inches="tight")
+            plt.close(fig)
 
     def metric_printer(self):
         print(f"Max motor speed DEVIATION (RPM): {max(self.w.std(0))}")
@@ -330,8 +321,8 @@ def main():
                     sampler=j, y0=[0.0,0.0])
 # Plots w response. 
     dc_motor.solver_w_plot(title=f"{j} \u03C9 vs Time for {i} Samples")
-# Gets the performance metricss and makes a histogram out of it. 
-    # dc_motor.solver_histo_plot(title=f"{j} metric for {i} Samples")
+# Gets the performance metrics and makes a histogram out of it. 
+    dc_motor.solver_histo_plot(title=f"{j} metric for {i} Samples")
 # Display them for sanity checks
     # dc_motor.metric_printer()
     # print("\n")
