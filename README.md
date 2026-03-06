@@ -15,3 +15,23 @@ This project analyzes how uncertainty in physical parameters affects the closed�
 - **Visualization tools** — time‑domain plots, histograms, and distribution summaries.
 - **Runnable example script** — end‑to‑end demonstration of the full simulation pipeline using `scripts/run_simulation.py`.
 
+## Package Structure
+
+```
+dc_motor_uq/
+├── model.py              # Motor dynamics and PID controller
+├── sampling.py           # Parameter sampling utilities
+├── simulation.py         # Simulation loop and parallel execution
+├── metrics.py            # Time-domain performance metrics
+├── visualization.py      # Plotting utilities
+scripts/
+└── run_simulation.py     # End-to-end example workflow
+```
+
+## Installation
+In the root directory, execute the following:
+```
+git clone https://github.com/HailtheWhale/dc_motor_uq.git
+cd dc_motor_uq
+pip install -r requirements.txt
+```
