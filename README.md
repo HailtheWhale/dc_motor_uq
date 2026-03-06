@@ -29,7 +29,7 @@ scripts/
 ```
 
 ## Installation
-In the root directory, execute the following:
+Clone the repository and install the required Python packages:
 ```
 git clone https://github.com/HailtheWhale/dc_motor_uq.git
 cd dc_motor_uq
