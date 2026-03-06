@@ -2,7 +2,7 @@
 # Python cache and artifacts
 # -------------------------
 __pycache__/
-*.py[cod]
+*.pyc
 *.pyo
 *.pyd
 
