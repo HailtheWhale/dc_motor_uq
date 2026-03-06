@@ -42,3 +42,13 @@ Execute the example workflow:
 ```
 python -m scripts.run_simulation
 ```
+
+## License
+
+This project is dual‑licensed:
+
+- **CC BY‑NC 4.0** for non‑commercial use.  
+- **Commercial licenses** are available upon request.
+
+Non‑commercial users may use, modify, and share the code with attribution.  
+Commercial use requires obtaining a separate license from the author.
