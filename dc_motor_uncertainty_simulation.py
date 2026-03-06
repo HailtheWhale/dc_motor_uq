@@ -171,6 +171,7 @@ class MotorDC():
 
 # What the histogram visuals use. 
     def get_performance_metrics(self):
+            t = self.t_eval
             target_w = self.target_w
 
         # Getting Performance Metrics. Each sample taken will have these associated 
@@ -181,28 +182,38 @@ class MotorDC():
             ss_errs            = []
 
             # How many times signal did not settle
-            i_ns = 0
+            n_not_settled = 0
+
             for i in range(self.n_samples):
                 w_i   = self.w[i,:] # Pull the RPMs for a given sample
-                w_max = max(w_i)    # Find the max value
+                w_max = np.max(w_i)    # Find the max value
             # If the max val is more than the target, we have overshoot. 
                 if (w_max > target_w):
-                    percent_overshoot = (w_max - target_w)/target_w*100
+                    percent_overshoot = (w_max - target_w) / target_w * 100
                 else:
                     percent_overshoot = 0.0
                 percent_overshoots.append(percent_overshoot)
+
             # SS error is based on final value. 
-                ss_errs.append(w_i[-1]-target_w)
-            # Rise time is the first time to reach 90% the target speed. 
-                times_rise.append(self.t_eval[w_i > target_w*0.9][0])
-            # Settling time is the time when the value is within 2% the target speed. 
-                try:
-                    time_settle = self.t_eval[np.where(abs(w_i - target_w) <= 0.02*target_w)[-1][0]]
-                    times_settle.append(time_settle)
-                except:
-                    i_ns += 1
-            if i_ns:
-                print(f"Signal did not settle {i_ns} times.")
+                ss_errs.append(w_i[-1] - target_w)
+
+            # Rise time: first time to reach 90% target. 
+                idx_rise = np.where(w_i >= 0.9* target_w)[0]
+                if len(idx_rise) == 0:
+                    times_rise.append(np.nan)
+                else:
+                    times_rise.append(t[idx_rise[0]])
+
+            # Settling time: time when the value is within 2% the target speed. 
+                idx_settle = np.where(np.abs(w_i - target_w) <= 0.02 * target_w)[0]
+                if len(idx_settle) == 0:
+                    times_settle.append(np.nan)
+                    n_not_settled += 1
+                else:
+                    times_settle.append(t[idx_settle[-1]])
+                    
+            if n_not_settled:
+                print(f"Signal did not settle {n_not_settled} times.")
 
         # Convert to np arrays 
             times_rise         = np.array(times_rise)
@@ -252,7 +263,6 @@ class MotorDC():
 
     # Retrieve the performance metrics analyzing
         metrics = self.get_performance_metrics()
-        print(metrics[2])
         labels = ["Rise Time (s)",
                 "Settling Time (s)",
                 "Percent Overshoot (%)",
@@ -277,7 +287,7 @@ class MotorDC():
 
             # Clean the filename
             safe_label = label.replace("/","_").replace("(","").replace(")","").replace(" ","_")
-            fig.savefig(save_dir / f"{safe_label}_{title}.png", dpi=300, bbox_inches="tight")
+            fig.savefig(save_dir / "Histograms" / f"{safe_label}_{title}.png", dpi=300, bbox_inches="tight")
             plt.close(fig)
 
     def metric_printer(self):
