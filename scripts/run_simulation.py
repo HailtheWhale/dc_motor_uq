@@ -11,7 +11,7 @@ def main():
 # it will take to run and the more memory. Can expand to multiple runs if wanted, 
 # but will make even more figs. 
     i = 250
-    j = "US"
+    j = "MC"
     # ["MC","LHS", "US"]
     motor = MotorDC(
                     target_w=10.0, 
