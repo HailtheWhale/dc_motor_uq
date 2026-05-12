@@ -53,13 +53,12 @@ pip install -r requirements.txt
 ```
 
 ## Requirements
-'''
-Python 3.9+
-numpy
-scipy
-matplotlib
-tqdm
-'''
+- Python 3.9+
+- numpy
+- scipy
+- matplotlib
+- tqdm
+
 
 ## How to Run
 Execute the example workflow:
@@ -73,20 +72,25 @@ python -m scripts.run_simulation
 The uncertainty sweep was run using 250 Monte Carlo samples with perturbed electrical and mechanical parameters. The figures below summarize how parameter variation affects the closed‑loop response of the DC motor under PID control.
 
 ### Closed‑Loop Speed Response Under Uncertainty
-
-![MC ω vs Time](Images/MC%20ω%20vs%20Time%20for%20250%20Samples.png)
+<p align="center">
+  <img src="Images/MC_ω_vs_Time_for_250_Samples.png" width="500">
+</p>
 
 The mean trajectory and 90% uncertainty envelope show that the PID controller strongly suppresses parameter‑driven variability. Most of the spread appears during the initial acceleration phase (0–0.1 s), where inductance, inertia, and torque constant variation influence current buildup and torque production. After this transient window, the envelope collapses and all trajectories converge toward the target speed.
 
 The nominal (median‑parameter) trajectory lies almost exactly on the mean response, indicating that the parameter distributions are symmetric and the controller is robust to moderate perturbations.
 
 ### Rise Time Distribution
-![Rise Time Distribution](Images/Histograms/Rise_Time_s_MC%20metric%20for%20250%20Samples.png)
+<p align="center">
+  <img src="Images/Histograms/Rise_Time_s_MC_metric_for_250_Samples.png" width="500">
+</p>
 
 The rise‑time histogram shows a unimodal distribution with most samples between approximately 0.11 and 0.14 seconds, and an overall spread from about 0.02 to 0.24 seconds. The peak occurs around 0.12–0.13 seconds, suggesting a roughly Gaussian‑like distribution centered near 0.125 seconds. This spread reflects the influence of electrical (L, R) and mechanical (J, B) uncertainty on the system’s ability to accelerate toward the target speed.
 
 ### Steady‑State Error Distribution
-![Steady-State Error Distribution](Images/Histograms/Steady-State_Error_rad_s_MC%20metric%20for%20250%20Samples.png)
+<p align="center">
+  <img src="Images/Histograms/Steady-State_Error_rad_s_MC_metric_for_250_Samples.png" width="500">
+</p>
 
 Most steady‑state errors fall between –0.18 and –0.11 rad/s, with a few outliers near –0.21 rad/s. All values are negative, indicating a small but consistent undershoot relative to the 10 rad/s target. This bias is expected given the relatively small integral gain (Ki = 0.1), which limits the controller’s ability to fully eliminate steady‑state error. The tight clustering of values shows that uncertainty has minimal effect on steady‑state performance — the controller’s bias dominates.
 

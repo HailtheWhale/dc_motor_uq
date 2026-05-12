@@ -35,8 +35,8 @@ def main():
     motor.metric_printer()
 
     # Visuals
-    solver_w_plot(motor, title=f"{j} \u03C9 vs Time for {i} Samples")
-    solver_histo_plot(motor, title=f"{j} metric for {i} Samples")
+    solver_w_plot(motor, title=f"{j}_\u03C9_vs_Time_for_{i}_Samples")
+    solver_histo_plot(motor, title=f"{j}_metric_for_{i}_Samples")
 
 # Cleanup to prevent memory leaks
     del motor
